@@ -6,6 +6,7 @@ from uuid import UUID
 
 from sqlalchemy import text
 
+from app.core.config import settings
 from app.db.database import engine
 
 
@@ -14,6 +15,7 @@ class UserRecord:
     id: UUID
     username: str
     email: str
+    is_admin: bool
     password_hash: str
     password_salt: str
     created_at: datetime
@@ -37,6 +39,7 @@ class AuthRepository:
                         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                         username TEXT NOT NULL,
                         email TEXT NOT NULL UNIQUE,
+                        is_admin BOOLEAN NOT NULL DEFAULT FALSE,
                         password_hash TEXT NOT NULL,
                         password_salt TEXT NOT NULL,
                         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -48,6 +51,9 @@ class AuthRepository:
                 text("ALTER TABLE employee_users ADD COLUMN IF NOT EXISTS username TEXT")
             )
             await conn.execute(
+                text("ALTER TABLE employee_users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE")
+            )
+            await conn.execute(
                 text(
                     """
                     UPDATE employee_users
@@ -55,6 +61,16 @@ class AuthRepository:
                     WHERE username IS NULL OR btrim(username) = ''
                     """
                 )
+            )
+            await conn.execute(
+                text(
+                    """
+                    UPDATE employee_users
+                    SET is_admin = TRUE
+                    WHERE lower(username) = lower(:admin_username)
+                    """
+                ),
+                {"admin_username": settings.admin_username},
             )
             await conn.execute(
                 text("ALTER TABLE employee_users ALTER COLUMN username SET NOT NULL")
@@ -84,9 +100,9 @@ class AuthRepository:
                 await conn.execute(
                     text(
                         """
-                        INSERT INTO employee_users (username, email, password_hash, password_salt)
-                        VALUES (:username, :email, :password_hash, :password_salt)
-                        RETURNING id, username, email, password_hash, password_salt, created_at
+                        INSERT INTO employee_users (username, email, is_admin, password_hash, password_salt)
+                        VALUES (:username, :email, FALSE, :password_hash, :password_salt)
+                        RETURNING id, username, email, is_admin, password_hash, password_salt, created_at
                         """
                     ),
                     {
@@ -102,6 +118,7 @@ class AuthRepository:
             id=row["id"],
             username=row["username"],
             email=row["email"],
+            is_admin=row["is_admin"],
             password_hash=row["password_hash"],
             password_salt=row["password_salt"],
             created_at=row["created_at"],
@@ -113,7 +130,7 @@ class AuthRepository:
                 await conn.execute(
                     text(
                         """
-                        SELECT id, username, email, password_hash, password_salt, created_at
+                        SELECT id, username, email, is_admin, password_hash, password_salt, created_at
                         FROM employee_users
                         WHERE lower(email) = lower(:email)
                         """
@@ -129,6 +146,7 @@ class AuthRepository:
             id=row["id"],
             username=row["username"],
             email=row["email"],
+            is_admin=row["is_admin"],
             password_hash=row["password_hash"],
             password_salt=row["password_salt"],
             created_at=row["created_at"],
@@ -140,7 +158,7 @@ class AuthRepository:
                 await conn.execute(
                     text(
                         """
-                        SELECT id, username, email, password_hash, password_salt, created_at
+                        SELECT id, username, email, is_admin, password_hash, password_salt, created_at
                         FROM employee_users
                         WHERE lower(username) = lower(:username)
                         """
@@ -156,6 +174,7 @@ class AuthRepository:
             id=row["id"],
             username=row["username"],
             email=row["email"],
+            is_admin=row["is_admin"],
             password_hash=row["password_hash"],
             password_salt=row["password_salt"],
             created_at=row["created_at"],
@@ -208,7 +227,7 @@ class AuthRepository:
                 await conn.execute(
                     text(
                         """
-                        SELECT id, username, email, password_hash, password_salt, created_at
+                        SELECT id, username, email, is_admin, password_hash, password_salt, created_at
                         FROM employee_users
                         WHERE id = :user_id
                         """
@@ -224,6 +243,7 @@ class AuthRepository:
             id=row["id"],
             username=row["username"],
             email=row["email"],
+            is_admin=row["is_admin"],
             password_hash=row["password_hash"],
             password_salt=row["password_salt"],
             created_at=row["created_at"],

@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     frontend_url: str = Field(default="http://localhost:5173", alias="FRONTEND_URL")
     retrieval_top_k: int = Field(default=5, alias="RETRIEVAL_TOP_K")
     min_relevance_threshold: float = Field(default=0.1, alias="MIN_RELEVANCE_THRESHOLD")
+    admin_username: str = Field(default="Level1_Admin", alias="ADMIN_USERNAME")
 
 
 settings = Settings()

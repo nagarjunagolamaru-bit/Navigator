@@ -18,6 +18,11 @@ async def require_bearer_token(authorization: str | None = Header(default=None))
     return token
 
 
+async def require_admin_token(token: str = Depends(require_bearer_token)) -> str:
+    await auth_service.get_admin_user_for_token(token)
+    return token
+
+
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 async def register(payload: RegisterRequest) -> AuthResponse:
     return await auth_service.register(username=payload.username, email=payload.email, password=payload.password)
@@ -31,7 +36,13 @@ async def login(payload: LoginRequest) -> AuthResponse:
 @router.get("/me", response_model=UserResponse)
 async def me(token: str = Depends(require_bearer_token)) -> UserResponse:
     user = await auth_service.get_user_for_token(token)
-    return UserResponse(id=str(user.id), username=user.username, email=user.email, created_at=user.created_at)
+    return UserResponse(
+        id=str(user.id),
+        username=user.username,
+        email=user.email,
+        is_admin=user.is_admin,
+        created_at=user.created_at,
+    )
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

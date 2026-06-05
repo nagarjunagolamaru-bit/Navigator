@@ -9,7 +9,7 @@ import type {
   UserProfile,
 } from "../types";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8001";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const isFormData = init?.body instanceof FormData;
@@ -46,7 +46,7 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   return JSON.parse(responseText) as T;
 }
 
-export async function uploadDocument(file?: File | null, sourceUrl?: string): Promise<DocumentUploadResponse> {
+export async function uploadDocument(token: string, file?: File | null, sourceUrl?: string): Promise<DocumentUploadResponse> {
   const body = new FormData();
   if (file) {
     body.append("file", file);
@@ -61,25 +61,37 @@ export async function uploadDocument(file?: File | null, sourceUrl?: string): Pr
 
   return apiRequest<DocumentUploadResponse>("/api/documents", {
     method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
     body,
   });
 }
 
-export async function listDocuments(): Promise<DocumentListResponse> {
+export async function listDocuments(token: string): Promise<DocumentListResponse> {
   return apiRequest<DocumentListResponse>("/api/documents", {
     method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
   });
 }
 
-export async function deleteDocument(documentId: string): Promise<void> {
+export async function deleteDocument(token: string, documentId: string): Promise<void> {
   await apiRequest<void>(`/api/documents/${documentId}`, {
     method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
   });
 }
 
-export async function queryKnowledgeBase(payload: QueryRequest): Promise<QueryResponse> {
+export async function queryKnowledgeBase(token: string, payload: QueryRequest): Promise<QueryResponse> {
   return apiRequest<QueryResponse>("/api/query", {
     method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
     body: JSON.stringify(payload),
   });
 }

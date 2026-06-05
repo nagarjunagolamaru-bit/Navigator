@@ -19,6 +19,10 @@ class AuthService:
         if len(normalized_username) < 2:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Username is too short.")
 
+        existing_by_username = await auth_repository.get_user_by_username(normalized_username)
+        if existing_by_username is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username is already registered.")
+
         normalized_email = email.strip().lower()
         existing = await auth_repository.get_user_by_email(normalized_email)
         if existing is not None:
@@ -69,6 +73,12 @@ class AuthService:
 
         return user
 
+    async def get_admin_user_for_token(self, token: str) -> UserRecord:
+        user = await self.get_user_for_token(token)
+        if not user.is_admin:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
+        return user
+
     @staticmethod
     def _hash_password(password: str, salt: str) -> str:
         derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 600_000)
@@ -82,7 +92,13 @@ class AuthService:
 
     @staticmethod
     def _to_user_response(user: UserRecord) -> UserResponse:
-        return UserResponse(id=str(user.id), username=user.username, email=user.email, created_at=user.created_at)
+        return UserResponse(
+            id=str(user.id),
+            username=user.username,
+            email=user.email,
+            is_admin=user.is_admin,
+            created_at=user.created_at,
+        )
 
 
 auth_service = AuthService()

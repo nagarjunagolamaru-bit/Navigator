@@ -18,6 +18,7 @@ class UserResponse(BaseModel):
     id: str
     username: str
     email: str
+    is_admin: bool = False
     created_at: datetime
 
 
