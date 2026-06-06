@@ -120,7 +120,7 @@ class DocumentRepository:
                         text(
                             """
                             INSERT INTO document_chunks (id, document_id, chunk_text, embedding, chunk_index)
-                            VALUES (gen_random_uuid(), :document_id, :chunk_text, :embedding::vector, :chunk_index)
+                            VALUES (gen_random_uuid(), :document_id, :chunk_text, CAST(:embedding AS vector), :chunk_index)
                             """
                         ),
                         {
@@ -199,10 +199,10 @@ class DocumentRepository:
                             SELECT d.id AS document_id,
                                    c.chunk_index,
                                    c.chunk_text,
-                                   (1 - (c.embedding <=> :embedding::vector)) AS similarity
+                                   (1 - (c.embedding <=> CAST(:embedding AS vector))) AS similarity
                             FROM document_chunks c
                             JOIN documents d ON d.id = c.document_id
-                            ORDER BY c.embedding <=> :embedding::vector
+                            ORDER BY c.embedding <=> CAST(:embedding AS vector)
                             LIMIT :top_k
                             """
                         ),

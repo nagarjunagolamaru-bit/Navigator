@@ -1,10 +1,16 @@
+from pathlib import Path
+
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+
+
+_BACKEND_DIR = Path(__file__).resolve().parents[2]
+_REPO_ROOT_DIR = _BACKEND_DIR.parent
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env", "../.env"),
+        env_file=(str(_BACKEND_DIR / ".env"), str(_REPO_ROOT_DIR / ".env")),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -32,6 +38,18 @@ class Settings(BaseSettings):
     retrieval_top_k: int = Field(default=5, alias="RETRIEVAL_TOP_K")
     min_relevance_threshold: float = Field(default=0.1, alias="MIN_RELEVANCE_THRESHOLD")
     admin_username: str = Field(default="Level1_Admin", alias="ADMIN_USERNAME")
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        # Prefer checked-in/root .env values over inherited shell env vars.
+        return init_settings, dotenv_settings, env_settings, file_secret_settings
 
 
 settings = Settings()

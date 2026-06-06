@@ -54,6 +54,9 @@ class AuthRepository:
                 text("ALTER TABLE employee_users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE")
             )
             await conn.execute(
+                text("ALTER TABLE employee_users ALTER COLUMN id SET DEFAULT gen_random_uuid()")
+            )
+            await conn.execute(
                 text(
                     """
                     UPDATE employee_users

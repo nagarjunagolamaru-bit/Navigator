@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+from time import perf_counter
 import re
 from uuid import UUID
 
@@ -10,8 +13,14 @@ from app.repositories.document_repository import document_repository
 from app.schemas.query import QueryResponse, QuerySource
 
 
+logger = logging.getLogger(__name__)
+uvicorn_logger = logging.getLogger("uvicorn.error")
+
+
 class QueryService:
     _NO_ANSWER_MESSAGE = "I could not find relevant information in the available knowledge base."
+    _LLM_MAX_CONTEXT_CHUNKS = 2
+    _LLM_MAX_CONTEXT_CHARS = 1200
     _TIME_PATTERN = re.compile(r"\b\d{1,2}:\d{2}\b")
     _STOP_WORDS = {
         "the",
@@ -34,22 +43,46 @@ class QueryService:
     }
 
     async def query(self, question: str, top_k: int | None = None) -> QueryResponse:
+        total_start = perf_counter()
+        timing_ms: dict[str, float] = {}
+
         normalized = question.strip()
         if not normalized:
-            return QueryResponse(answer=self._NO_ANSWER_MESSAGE, sources=[])
+            response = QueryResponse(answer=self._NO_ANSWER_MESSAGE, sources=[])
+            self._log_timing(timing_ms, total_start, normalized, top_k or settings.retrieval_top_k, response)
+            return response
 
         requested_top_k = top_k or settings.retrieval_top_k
         question_terms = self._tokenize(normalized)
 
+        started = perf_counter()
         query_embedding = (await embedding_service.embed_texts([normalized]))[0]
+        timing_ms["embed"] = (perf_counter() - started) * 1000
+
+        started = perf_counter()
         chunk_matches = await document_repository.search_chunks(
             query_embedding=query_embedding,
             top_k=max(requested_top_k * 2, requested_top_k),
         )
+        timing_ms["vector_search"] = (perf_counter() - started) * 1000
 
+        # Avoid N+1 sequential DB calls by loading referenced documents concurrently.
+        unique_doc_ids = list({chunk.document_id for chunk in chunk_matches})
+        started = perf_counter()
+        docs = await asyncio.gather(
+            *(document_repository.get_document(document_id) for document_id in unique_doc_ids)
+        )
+        timing_ms["doc_lookup"] = (perf_counter() - started) * 1000
+        doc_by_id = {
+            doc.id: doc
+            for doc in docs
+            if doc is not None
+        }
+
+        started = perf_counter()
         ranked: list[tuple[QuerySource, float, str]] = []
         for chunk in chunk_matches:
-            doc = await document_repository.get_document(chunk.document_id)
+            doc = doc_by_id.get(chunk.document_id)
             if doc is None:
                 continue
 
@@ -71,39 +104,98 @@ class QueryService:
                 score=round(blended_score, 4),
             )
             ranked.append((source, blended_score, chunk.chunk_text))
+        timing_ms["ranking"] = (perf_counter() - started) * 1000
 
         ranked.sort(key=lambda item: item[1], reverse=True)
         selected_rows = ranked[:requested_top_k]
         selected = [source for source, _, _ in selected_rows]
 
         if not selected:
-            return QueryResponse(answer=self._NO_ANSWER_MESSAGE, sources=[])
+            response = QueryResponse(answer=self._NO_ANSWER_MESSAGE, sources=[])
+            self._log_timing(timing_ms, total_start, normalized, requested_top_k, response)
+            return response
 
         min_selected_score = max(settings.min_relevance_threshold, 0.25)
         if selected[0].score < min_selected_score:
-            return QueryResponse(answer=self._NO_ANSWER_MESSAGE, sources=[])
+            response = QueryResponse(answer=self._NO_ANSWER_MESSAGE, sources=[])
+            self._log_timing(timing_ms, total_start, normalized, requested_top_k, response)
+            return response
 
         primary_source = [selected[0]]
 
         if self._is_supplier_inventory_question(normalized):
             answer = await self._answer_supplier_inventory(normalized, selected)
-            return QueryResponse(answer=answer, sources=primary_source)
+            response = QueryResponse(answer=answer, sources=primary_source)
+            self._log_timing(timing_ms, total_start, normalized, requested_top_k, response)
+            return response
 
         if self._is_policy_premium_question(normalized):
             answer = await self._answer_policy_premium(selected)
             if answer != self._NO_ANSWER_MESSAGE:
-                return QueryResponse(answer=answer, sources=primary_source)
+                response = QueryResponse(answer=answer, sources=primary_source)
+                self._log_timing(timing_ms, total_start, normalized, requested_top_k, response)
+                return response
 
         if self._is_policy_fact_question(normalized):
             answer = await self._answer_policy_fact(normalized, selected)
             if answer != self._NO_ANSWER_MESSAGE:
-                return QueryResponse(answer=answer, sources=primary_source)
+                response = QueryResponse(answer=answer, sources=primary_source)
+                self._log_timing(timing_ms, total_start, normalized, requested_top_k, response)
+                return response
 
+        started = perf_counter()
+        contexts = [
+            self._trim_context(chunk_text)
+            for _, _, chunk_text in selected_rows[: self._LLM_MAX_CONTEXT_CHUNKS]
+        ]
         answer = await llm_service.answer_from_context(
             question=normalized,
-            contexts=[chunk_text for _, _, chunk_text in selected_rows],
+            contexts=contexts,
         )
-        return QueryResponse(answer=answer, sources=primary_source)
+        timing_ms["llm"] = (perf_counter() - started) * 1000
+        response = QueryResponse(answer=answer, sources=primary_source)
+        self._log_timing(timing_ms, total_start, normalized, requested_top_k, response)
+        return response
+
+    def _trim_context(self, chunk_text: str) -> str:
+        compact = re.sub(r"\s+", " ", chunk_text).strip()
+        if len(compact) <= self._LLM_MAX_CONTEXT_CHARS:
+            return compact
+        return compact[: self._LLM_MAX_CONTEXT_CHARS]
+
+    def _log_timing(
+        self,
+        timing_ms: dict[str, float],
+        total_start: float,
+        question: str,
+        top_k: int,
+        response: QueryResponse,
+    ) -> None:
+        total_ms = (perf_counter() - total_start) * 1000
+        logger.info(
+            "query_perf total_ms=%.1f embed_ms=%.1f vector_ms=%.1f doc_ms=%.1f rank_ms=%.1f llm_ms=%.1f top_k=%d q_len=%d sources=%d",
+            total_ms,
+            timing_ms.get("embed", 0.0),
+            timing_ms.get("vector_search", 0.0),
+            timing_ms.get("doc_lookup", 0.0),
+            timing_ms.get("ranking", 0.0),
+            timing_ms.get("llm", 0.0),
+            top_k,
+            len(question),
+            len(response.sources),
+        )
+        uvicorn_logger.info(
+            "query_perf total_ms=%.1f embed_ms=%.1f vector_ms=%.1f doc_ms=%.1f rank_ms=%.1f llm_ms=%.1f top_k=%d q_len=%d sources=%d",
+            total_ms,
+            timing_ms.get("embed", 0.0),
+            timing_ms.get("vector_search", 0.0),
+            timing_ms.get("doc_lookup", 0.0),
+            timing_ms.get("ranking", 0.0),
+            timing_ms.get("llm", 0.0),
+            top_k,
+            len(question),
+            len(response.sources),
+        )
 
     @staticmethod
     def _tokenize(text: str) -> set[str]:
