@@ -74,6 +74,7 @@ function App() {
   const employeeLoggedIn = Boolean(employeeToken && employeeUser);
   const hasDocuments = useMemo(() => documents.length > 0, [documents.length]);
   const isAdminUser = Boolean(employeeToken && employeeUser?.is_admin);
+  const canDeleteDocuments = employeeUser?.username?.toLowerCase() === "level1_admin";
   const canRegister =
     registerUsername.trim().length >= 2 &&
     EMAIL_PATTERN.test(registerEmail.trim()) &&
@@ -717,14 +718,16 @@ function App() {
                   <li key={doc.id} className="rounded-md border border-slate-200 p-3">
                     <p className="font-medium text-slate-900">{doc.title}</p>
                     <p className="mt-1 text-xs text-slate-600">Added: {new Date(doc.created_at).toLocaleString()}</p>
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      onClick={() => void handleDelete(doc.id)}
-                      className="mt-2 rounded-md border border-slate-300 px-3 py-1 text-xs text-slate-700 disabled:opacity-50"
-                    >
-                      {busyState === "deleting" ? "Deleting..." : "Delete"}
-                    </button>
+                    {canDeleteDocuments && (
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => void handleDelete(doc.id)}
+                        className="mt-2 rounded-md border border-slate-300 px-3 py-1 text-xs text-slate-700 disabled:opacity-50"
+                      >
+                        {busyState === "deleting" ? "Deleting..." : "Delete"}
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>

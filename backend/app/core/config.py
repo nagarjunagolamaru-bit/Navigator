@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     retrieval_top_k: int = Field(default=5, alias="RETRIEVAL_TOP_K")
     min_relevance_threshold: float = Field(default=0.1, alias="MIN_RELEVANCE_THRESHOLD")
     admin_username: str = Field(default="Level1_Admin", alias="ADMIN_USERNAME")
+    level2_admin_username: str = Field(default="", alias="LEVEL2_ADMIN_USERNAME")
+    level2_admin_password: str = Field(default="", alias="LEVEL2_ADMIN_PASSWORD")
+    documents_delete_admin_username: str = Field(default="Level1_Admin", alias="DOCUMENTS_DELETE_ADMIN_USERNAME")
 
     @classmethod
     def settings_customise_sources(

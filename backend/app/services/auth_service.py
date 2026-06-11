@@ -7,12 +7,29 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 
+from app.core.config import settings
 from app.repositories.auth_repository import UserRecord, auth_repository
 from app.schemas.auth import AuthResponse, UserResponse
 
 
 class AuthService:
     _SESSION_TTL_HOURS = 12
+
+    async def ensure_level2_admin_account(self) -> None:
+        username = settings.level2_admin_username.strip()
+        password = settings.level2_admin_password
+        if not username or not password:
+            return
+
+        password_salt = secrets.token_hex(16)
+        password_hash = self._hash_password(password, password_salt)
+        normalized_email = f"{username.lower()}@navigator.local"
+        await auth_repository.upsert_admin_user_by_username(
+            username=username,
+            email=normalized_email,
+            password_hash=password_hash,
+            password_salt=password_salt,
+        )
 
     async def register(self, *, username: str, email: str, password: str) -> AuthResponse:
         normalized_username = username.strip()

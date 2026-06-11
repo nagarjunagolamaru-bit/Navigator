@@ -127,6 +127,80 @@ class AuthRepository:
             created_at=row["created_at"],
         )
 
+    async def upsert_admin_user_by_username(
+        self,
+        *,
+        username: str,
+        email: str,
+        password_hash: str,
+        password_salt: str,
+    ) -> UserRecord:
+        async with engine.begin() as conn:
+            existing = (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT id
+                        FROM employee_users
+                        WHERE lower(username) = lower(:username)
+                        LIMIT 1
+                        """
+                    ),
+                    {"username": username},
+                )
+            ).mappings().first()
+
+            if existing is None:
+                row = (
+                    await conn.execute(
+                        text(
+                            """
+                            INSERT INTO employee_users (username, email, is_admin, password_hash, password_salt)
+                            VALUES (:username, :email, TRUE, :password_hash, :password_salt)
+                            RETURNING id, username, email, is_admin, password_hash, password_salt, created_at
+                            """
+                        ),
+                        {
+                            "username": username,
+                            "email": email,
+                            "password_hash": password_hash,
+                            "password_salt": password_salt,
+                        },
+                    )
+                ).mappings().one()
+            else:
+                row = (
+                    await conn.execute(
+                        text(
+                            """
+                            UPDATE employee_users
+                            SET email = :email,
+                                is_admin = TRUE,
+                                password_hash = :password_hash,
+                                password_salt = :password_salt
+                            WHERE id = :user_id
+                            RETURNING id, username, email, is_admin, password_hash, password_salt, created_at
+                            """
+                        ),
+                        {
+                            "user_id": existing["id"],
+                            "email": email,
+                            "password_hash": password_hash,
+                            "password_salt": password_salt,
+                        },
+                    )
+                ).mappings().one()
+
+        return UserRecord(
+            id=row["id"],
+            username=row["username"],
+            email=row["email"],
+            is_admin=row["is_admin"],
+            password_hash=row["password_hash"],
+            password_salt=row["password_salt"],
+            created_at=row["created_at"],
+        )
+
     async def get_user_by_email(self, email: str) -> UserRecord | None:
         async with engine.connect() as conn:
             row = (

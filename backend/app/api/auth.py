@@ -23,6 +23,13 @@ async def require_admin_token(token: str = Depends(require_bearer_token)) -> str
     return token
 
 
+async def require_documents_delete_admin_token(token: str = Depends(require_bearer_token)) -> str:
+    admin_user = await auth_service.get_admin_user_for_token(token)
+    if admin_user.username.lower() != "level1_admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only Level1 admin can delete documents.")
+    return token
+
+
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 async def register(payload: RegisterRequest) -> AuthResponse:
     return await auth_service.register(username=payload.username, email=payload.email, password=payload.password)

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
-from app.api.auth import require_admin_token
+from app.api.auth import require_admin_token, require_documents_delete_admin_token
 from app.schemas.document import DocumentListResponse, DocumentMetadata, DocumentUploadResponse
 from app.services.document_service import document_service
 
@@ -81,7 +81,7 @@ async def list_documents(_token: str = Depends(require_admin_token)) -> Document
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_document(document_id: str, _token: str = Depends(require_admin_token)) -> None:
+async def delete_document(document_id: str, _token: str = Depends(require_documents_delete_admin_token)) -> None:
     try:
         deleted = await document_service.delete_document(document_id)
     except Exception as exc:
